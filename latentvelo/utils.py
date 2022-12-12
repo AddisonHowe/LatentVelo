@@ -502,6 +502,12 @@ def batch_func(func, inputs, num_outputs, split_size = 500):
     """
     compute functions in batches/chunks to save memory for large datasets
     """
+
+    if th.cuda.is_available():
+        device = th.device('cuda')
+    else:
+        device = th.device('cpu')
+
     outputs = [[] for j in range(num_outputs)]
     
     for i in range(split_size, inputs[0].shape[0] + split_size, split_size):
@@ -543,7 +549,7 @@ def batch_func(func, inputs, num_outputs, split_size = 500):
             elif input.shape[0] != input.shape[1]:
                 inputs_i.append(input[i-split_size:i])
             else:
-                inputs_i.append(sparse_mx_to_torch_sparse_tensor(normalize(input[i-split_size:i, i-split_size:i])).cuda())
+                inputs_i.append(sparse_mx_to_torch_sparse_tensor(normalize(input[i-split_size:i, i-split_size:i])).to(device))
             
         outputs_i = func(*inputs_i)
         if type(outputs_i) != tuple:

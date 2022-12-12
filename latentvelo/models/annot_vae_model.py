@@ -60,7 +60,8 @@ class AnnotVAE(nn.Module):
                  include_time=False, kl_warmup_steps=25, kl_final_weight=1,
                  batch_correction=False, linear_decoder=True, use_velo_genes=False,
                  correlation_reg = True, corr_weight_u = 0.1, corr_weight_s = 0.1, corr_weight_uu = 0., batches = 1, 
-                 time_reg = False, time_reg_weight = 0.1, time_reg_decay=0, shared=False, corr_velo_mask = True, exp_time=False, max_sigma_z = 0, celltype_corr = False, latent_reg = False, velo_reg = False, velo_reg_weight = 1, celltype_velo = False, gcn = True):
+                 time_reg = False, time_reg_weight = 0.1, time_reg_decay=0, shared=False, corr_velo_mask = True, exp_time=False, max_sigma_z = 0, celltype_corr = False, latent_reg = False, velo_reg = False, velo_reg_weight = 1, celltype_velo = False, gcn = True,
+                 device='cuda'):
         super(AnnotVAE, self).__init__()
         
         # constant settings
@@ -94,6 +95,7 @@ class AnnotVAE(nn.Module):
         self.velo_reg_weight = velo_reg_weight
         self.celltype_velo = celltype_velo
         self.annot = True
+        self.device = th.device(device)
 
         self.u_size = 2*latent_dim
         self.celltypes = celltypes
@@ -190,13 +192,13 @@ class AnnotVAE(nn.Module):
     def _run_dynamics(self, c, times, test=False):
         
         # set initial state
-        h0 = self.initial(th.zeros(c.shape[0], 1).cuda())
-        h0 = th.cat((h0, th.zeros(c.shape[0], self.zr_dim).cuda(), c), dim=-1)
+        h0 = self.initial(th.zeros(c.shape[0], 1).to(self.device))
+        h0 = th.cat((h0, th.zeros(c.shape[0], self.zr_dim).to(self.device), c), dim=-1)
         
         if test:
-            ht_full = odeint(self.velocity_field, h0, th.cat((th.zeros(1).cuda(), times), dim=-1), method='dopri8', options=dict(max_num_steps=self.num_steps)).permute(1,0,2) #
+            ht_full = odeint(self.velocity_field, h0, th.cat((th.zeros(1).to(self.device), times), dim=-1), method='dopri8', options=dict(max_num_steps=self.num_steps)).permute(1,0,2) #
         else:
-            ht_full = odeint(self.velocity_field, h0, th.cat((th.zeros(1).cuda(), times), dim=-1), method='dopri5',rtol=1e-5, atol=1e-5, options=dict(max_num_steps=self.num_steps)).permute(1,0,2) #
+            ht_full = odeint(self.velocity_field, h0, th.cat((th.zeros(1).to(self.device), times), dim=-1), method='dopri5',rtol=1e-5, atol=1e-5, options=dict(max_num_steps=self.num_steps)).permute(1,0,2) #
         ht_full = ht_full[:,1:]
         
         ht = ht_full[...,:2*self.latent+self.zr_dim]
@@ -215,7 +217,7 @@ class AnnotVAE(nn.Module):
         ulatent = latent_state[:,self.latent*2:self.latent*2+self.u_size]
         c = latent_state[:,self.latent*2 + self.u_size:]
         
-        orig_index = th.arange(normed_s.shape[0]).cuda()
+        orig_index = th.arange(normed_s.shape[0]).to(self.device)
         
         velo_genes_mask = velo_genes_mask[0]
 
@@ -329,18 +331,18 @@ class AnnotVAE(nn.Module):
         if self.velo_reg:
             velo_reg = self.velo_reg_weight*self.velo_reg_func(normed_s, normed_u, shat, uhat, shat_data, uhat_data, mask_s, mask_u, zs, zu, zt, zs_data, zu_data, latent_time, batch_id, celltype_id, velo_genes_mask)
         else:
-            velo_reg = th.zeros(1).cuda()
+            velo_reg = th.zeros(1).to(self.device)
         
         if self.correlation_reg:
             corr_reg, corr_reg_val = self.corr_reg_func(normed_s, normed_u, shat, uhat, shat_data, uhat_data, mask_s, mask_u, zs, zu, zt, zs_data, zu_data, latent_time, batch_id, celltype_id, velo_genes_mask)
         else:
             corr_reg = 0
-            corr_reg_val = th.zeros(1).cuda()
+            corr_reg_val = th.zeros(1).to(self.device)
 
         if self.latent_reg:
             latent_reg = self.latent_reg_func(zs, zu, zt, zs_data, zu_data, latent_time)
         else:
-            latent_reg = th.zeros(1).cuda()
+            latent_reg = th.zeros(1).to(self.device)
             
         if self.time_reg:
             if self.time_reg_decay > 0 and epoch != None:
@@ -499,7 +501,7 @@ class AnnotVAE(nn.Module):
           elif input.shape[0] != input.shape[1]:
             inputs_i.append(input[i-split_size:i])
           else:
-            inputs_i.append(sparse_mx_to_torch_sparse_tensor(normalize(input[i-split_size:i, i-split_size:i])).cuda())
+            inputs_i.append(sparse_mx_to_torch_sparse_tensor(normalize(input[i-split_size:i, i-split_size:i])).to(self.device))
         
         outputs_i = func(*inputs_i)
         if type(outputs_i) != tuple:
@@ -537,7 +539,7 @@ class AnnotVAE(nn.Module):
 
         # choose times
         unique_times, inverse_indices = th.unique(latent_time, return_inverse=True, sorted=True)
-        times = th.linspace(0, unique_times.max(), time_steps).cuda()
+        times = th.linspace(0, unique_times.max(), time_steps).to(self.device)
 
         # run dyanmics
         ht, h0 = self._run_dynamics(c, times[1:], test=False)
