@@ -44,7 +44,12 @@ def output_results(model, adata, gene_velocity = False, save_name = None, sample
     annot = model.annot
     exp_time = model.exp_time
     
-    model = model.cuda()
+    if th.cuda.is_available():
+        device = th.device('cuda')
+    else:
+        device = th.device('cpu')
+
+    model = model.to(device)
 
     def gene_velocity_func(z, vz, batch_id, mode = 's', create_graph=False):
 
@@ -67,25 +72,25 @@ def output_results(model, adata, gene_velocity = False, save_name = None, sample
         
         return jvp
     
-    s = th.Tensor(adata.layers['spliced_counts'].astype(float)).cuda()
-    u = th.Tensor(adata.layers['unspliced_counts'].astype(float)).cuda()
-    normed_s = th.Tensor(adata.layers['spliced'].astype(float)).cuda()
-    normed_u = th.Tensor(adata.layers['unspliced'].astype(float)).cuda()
+    s = th.Tensor(adata.layers['spliced_counts'].astype(float)).to(device)
+    u = th.Tensor(adata.layers['unspliced_counts'].astype(float)).to(device)
+    normed_s = th.Tensor(adata.layers['spliced'].astype(float)).to(device)
+    normed_u = th.Tensor(adata.layers['unspliced'].astype(float)).to(device)
     if model.likelihood_model == 'nb':
-        s_size_factor = th.Tensor(adata.obs['spliced_size_factor'].astype(float)).cuda()[:,None]
-        u_size_factor = th.Tensor(adata.obs['unspliced_size_factor'].astype(float)).cuda()[:,None]
+        s_size_factor = th.Tensor(adata.obs['spliced_size_factor'].astype(float)).to(device)[:,None]
+        u_size_factor = th.Tensor(adata.obs['unspliced_size_factor'].astype(float)).to(device)[:,None]
     
     # check if adjacency matrix has already been normalized
     if adata.obsp['adj'][0,0] < 1:
         set_adj(adata)
         
     adj = adata.obsp['adj']
-    batch_id = th.Tensor(adata.obs['batch_id']).cuda()[:,None].cuda()
-    batch_onehot = th.Tensor(adata.obsm['batch_onehot']).cuda()
+    batch_id = th.Tensor(adata.obs['batch_id']).to(device)[:,None].to(device)
+    batch_onehot = th.Tensor(adata.obsm['batch_onehot']).to(device)
     if annot:
-        celltype = th.Tensor(adata.obsm['celltype']).cuda()
+        celltype = th.Tensor(adata.obsm['celltype']).to(device)
     if exp_time:
-        times = th.Tensor(adata.obs['exp_time']).cuda()[:,None]
+        times = th.Tensor(adata.obs['exp_time']).to(device)[:,None]
 
     
     # compute latent embedding
@@ -142,8 +147,8 @@ def output_results(model, adata, gene_velocity = False, save_name = None, sample
 
 
     if gene_velocity:
-        vs = model.batch_func(lambda x,y,z: gene_velocity_func(x,y,z,mode='s'), (z[:,:model.latent].cuda(), velocity[:,:model.latent].cuda(), batch_id), 1)[0]
-        vu = model.batch_func(lambda x,y,z: gene_velocity_func(x,y,z,mode='u'), (z[:,model.latent:2*model.latent].cuda(), velocity[:,model.latent:2*model.latent].cuda(),
+        vs = model.batch_func(lambda x,y,z: gene_velocity_func(x,y,z,mode='s'), (z[:,:model.latent].to(device), velocity[:,:model.latent].to(device), batch_id), 1)[0]
+        vu = model.batch_func(lambda x,y,z: gene_velocity_func(x,y,z,mode='u'), (z[:,model.latent:2*model.latent].to(device), velocity[:,model.latent:2*model.latent].to(device),
                                                 batch_id), 1)[0]
         
         adata.layers['velo_u'] = (vu.cpu().numpy())
@@ -151,26 +156,26 @@ def output_results(model, adata, gene_velocity = False, save_name = None, sample
         adata.layers['velo'] = (vs.cpu().numpy())
         if model.batch_correction:
             if model.likelihood_model == 'gaussian':
-                shat = model.decoder_batch(z[:,:model.latent].cuda(), batch_id, 's')
-                uhat = model.decoder_batch(z[:,model.latent:2*model.latent].cuda(), batch_id, 'u')
-                shat_traj = model.decoder_batch(ztraj[:,:model.latent].cuda(), batch_id, 's')
-                uhat_traj = model.decoder_batch(ztraj[:,model.latent:2*model.latent].cuda(), batch_id, 'u')
+                shat = model.decoder_batch(z[:,:model.latent].to(device), batch_id, 's')
+                uhat = model.decoder_batch(z[:,model.latent:2*model.latent].to(device), batch_id, 'u')
+                shat_traj = model.decoder_batch(ztraj[:,:model.latent].to(device), batch_id, 's')
+                uhat_traj = model.decoder_batch(ztraj[:,model.latent:2*model.latent].to(device), batch_id, 'u')
             else:
-                shat = F.softmax(model.decoder_batch(z[:,:model.latent].cuda(), batch_id, 's'), dim=-1) * s_size_factor 
-                uhat = F.softmax(model.decoder_batch(z[:,model.latent:2*model.latent].cuda(), batch_id, 'u'), dim=-1) * u_size_factor
-                shat_traj = F.softmax(model.decoder_batch(ztraj[:,:model.latent].cuda(), batch_id, 's'), dim=-1) * s_size_factor
-                uhat_traj = F.softmax(model.decoder_batch(ztraj[:,model.latent:2*model.latent].cuda(), batch_id, 'u'), dim=-1) * u_size_factor
+                shat = F.softmax(model.decoder_batch(z[:,:model.latent].to(device), batch_id, 's'), dim=-1) * s_size_factor 
+                uhat = F.softmax(model.decoder_batch(z[:,model.latent:2*model.latent].to(device), batch_id, 'u'), dim=-1) * u_size_factor
+                shat_traj = F.softmax(model.decoder_batch(ztraj[:,:model.latent].to(device), batch_id, 's'), dim=-1) * s_size_factor
+                uhat_traj = F.softmax(model.decoder_batch(ztraj[:,model.latent:2*model.latent].to(device), batch_id, 'u'), dim=-1) * u_size_factor
         else:
             if model.likelihood_model == 'gaussian':
-                shat = model.decoder_s(z[:,:model.latent].cuda())
-                uhat = model.decoder_u(z[:,model.latent:2*model.latent].cuda())
-                shat_traj = model.decoder_s(ztraj[:,:model.latent].cuda())
-                uhat_traj = model.decoder_u(ztraj[:,model.latent:2*model.latent].cuda())
+                shat = model.decoder_s(z[:,:model.latent].to(device))
+                uhat = model.decoder_u(z[:,model.latent:2*model.latent].to(device))
+                shat_traj = model.decoder_s(ztraj[:,:model.latent].to(device))
+                uhat_traj = model.decoder_u(ztraj[:,model.latent:2*model.latent].to(device))
             else:
-                shat = F.softmax(model.decoder_s(z[:,:model.latent].cuda()), dim=-1) * s_size_factor 
-                uhat = F.softmax(model.decoder_u(z[:,model.latent:2*model.latent].cuda()), dim=-1) * u_size_factor 
-                shat_traj = F.softmax(model.decoder_s(ztraj[:,:model.latent].cuda()), dim=-1) * s_size_factor 
-                uhat_traj = F.softmax(model.decoder_u(ztraj[:,model.latent:2*model.latent].cuda()), dim=-1) * u_size_factor 
+                shat = F.softmax(model.decoder_s(z[:,:model.latent].to(device)), dim=-1) * s_size_factor 
+                uhat = F.softmax(model.decoder_u(z[:,model.latent:2*model.latent].to(device)), dim=-1) * u_size_factor 
+                shat_traj = F.softmax(model.decoder_s(ztraj[:,:model.latent].to(device)), dim=-1) * s_size_factor 
+                uhat_traj = F.softmax(model.decoder_u(ztraj[:,model.latent:2*model.latent].to(device)), dim=-1) * u_size_factor 
 
         if model.likelihood_model == 'gaussian':
             R2 = R2_score(th.cat((shat, uhat), dim=-1), 
@@ -224,6 +229,11 @@ def cell_trajectories(model, adata, mode='normal', time_steps = 50):
     Infer cell trajectories
     """
 
+    if th.cuda.is_available():
+        device = th.device('cuda')
+    else:
+        device = th.device('cpu')
+
     annot = model.annot
     exp_time = model.exp_time
     
@@ -232,45 +242,45 @@ def cell_trajectories(model, adata, mode='normal', time_steps = 50):
         with th.no_grad():
             if not model.batch_correction:
                 if exp_time:
-                    z_traj, times = batch_func(model.cell_trajectories, (th.Tensor(adata.layers['spliced']).cuda(),
-                                                                     th.Tensor(adata.layers['unspliced']).cuda(),
-                                                                     (th.Tensor(adata.obsm['celltype']).cuda(),
-                                                                      th.Tensor(adata.obs['exp_time'][:,None]).cuda()),
+                    z_traj, times = batch_func(model.cell_trajectories, (th.Tensor(adata.layers['spliced']).to(device),
+                                                                     th.Tensor(adata.layers['unspliced']).to(device),
+                                                                     (th.Tensor(adata.obsm['celltype']).to(device),
+                                                                      th.Tensor(adata.obs['exp_time'][:,None]).to(device)),
                                                                      adata.obsp['adj']), 2, split_size=100)
                 else:
-                    z_traj, times = batch_func(model.cell_trajectories, (th.Tensor(adata.layers['spliced']).cuda(),
-                                                                     th.Tensor(adata.layers['unspliced']).cuda(),
-                                                                     th.Tensor(adata.obsm['celltype']).cuda(),
+                    z_traj, times = batch_func(model.cell_trajectories, (th.Tensor(adata.layers['spliced']).to(device),
+                                                                     th.Tensor(adata.layers['unspliced']).to(device),
+                                                                     th.Tensor(adata.obsm['celltype']).to(device),
                                                                      adata.obsp['adj']), 2, split_size=100)
             else:
                 if exp_time:
-                    z_traj, times = batch_func(model.cell_trajectories, (th.Tensor(adata.layers['spliced']).cuda(),
-                                                                     th.Tensor(adata.layers['unspliced']).cuda(),
-                                                                     (th.Tensor(adata.obsm['celltype']).cuda(),
-                                                                      th.Tensor(adata.obs['exp_time'][:,None]).cuda()),
+                    z_traj, times = batch_func(model.cell_trajectories, (th.Tensor(adata.layers['spliced']).to(device),
+                                                                     th.Tensor(adata.layers['unspliced']).to(device),
+                                                                     (th.Tensor(adata.obsm['celltype']).to(device),
+                                                                      th.Tensor(adata.obs['exp_time'][:,None]).to(device)),
                                                                      adata.obsp['adj'],
-                                                                     (th.Tensor(adata.obs['batch_id'][:,None]).cuda(),
-                                                                     th.Tensor(adata.obsm['batch_onehot']).cuda())), 2, split_size=100)
+                                                                     (th.Tensor(adata.obs['batch_id'][:,None]).to(device),
+                                                                     th.Tensor(adata.obsm['batch_onehot']).to(device))), 2, split_size=100)
                 else:
-                    z_traj, times = batch_func(model.cell_trajectories, (th.Tensor(adata.layers['spliced']).cuda(),
-                                                                     th.Tensor(adata.layers['unspliced']).cuda(),
-                                                                     th.Tensor(adata.obsm['celltype']).cuda(),
+                    z_traj, times = batch_func(model.cell_trajectories, (th.Tensor(adata.layers['spliced']).to(device),
+                                                                     th.Tensor(adata.layers['unspliced']).to(device),
+                                                                     th.Tensor(adata.obsm['celltype']).to(device),
                                                                      adata.obsp['adj'],
-                                                                     (th.Tensor(adata.obs['batch_id'][:,None]).cuda(),
-                                                                     th.Tensor(adata.obsm['batch_onehot']).cuda())), 2, split_size=100)
+                                                                     (th.Tensor(adata.obs['batch_id'][:,None]).to(device),
+                                                                     th.Tensor(adata.obsm['batch_onehot']).to(device))), 2, split_size=100)
 
     else:
         with th.no_grad():
             if not model.batch_correction:#batch_id == None and batch_onehot == None:
-                z_traj, times = batch_func(model.cell_trajectories, (th.Tensor(adata.layers['spliced']).cuda(),
-                                                                     th.Tensor(adata.layers['unspliced']).cuda(),
+                z_traj, times = batch_func(model.cell_trajectories, (th.Tensor(adata.layers['spliced']).to(device),
+                                                                     th.Tensor(adata.layers['unspliced']).to(device),
                                                                      adata.obsp['adj']), 2, split_size=100)
             else:
-                z_traj, times = batch_func(model.cell_trajectories, (th.Tensor(adata.layers['spliced']).cuda(),
-                                                                     th.Tensor(adata.layers['unspliced']).cuda(),
+                z_traj, times = batch_func(model.cell_trajectories, (th.Tensor(adata.layers['spliced']).to(device),
+                                                                     th.Tensor(adata.layers['unspliced']).to(device),
                                                                      adata.obsp['adj'],
-                                                                     th.Tensor(adata.obs['batch_id'][:,None]).cuda(),
-                                                                     th.Tensor(adata.obsm['batch_onehot']).cuda()), 2, split_size=100)
+                                                                     th.Tensor(adata.obs['batch_id'][:,None]).to(device),
+                                                                     th.Tensor(adata.obsm['batch_onehot']).to(device)), 2, split_size=100)
 
     return z_traj, times
 
