@@ -14,6 +14,11 @@ class VelocityFieldReg(nn.Module):
         self.h_dim = h_dim
         self.include_time=include_time
 
+        if th.cuda.is_available():
+            self.device = th.device('cuda')
+        else:
+            self.device = th.device('cpu')
+
         if include_time:
             self.unspliced_net = MLP(latent+zr_dim+1, [latent+5], latent)
         else:
@@ -55,7 +60,7 @@ class VelocityFieldReg(nn.Module):
         reg_drift = self.reg_net(th.cat((zs, zr, h), dim=-1))
         
         return th.cat((spliced_drift, unspliced_drift, reg_drift,
-                       th.zeros(spliced_drift.shape[0], self.h_dim).cuda()), dim=-1)
+                       th.zeros(spliced_drift.shape[0], self.h_dim).to(self.device)), dim=-1)
     
     def drift(self, z):
         
