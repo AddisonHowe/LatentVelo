@@ -8,7 +8,6 @@ from latentvelo.models.velocity_field import VelocityFieldReg
 from latentvelo.models.modules import create_encoder, MLP, GCN
 
 from latentvelo.utils import normalize, sparse_mx_to_torch_sparse_tensor, batch_jacobian, gaussian_kl, paired_correlation, unique_index
-from latentvelo.path_regularization import latent_time_path_reg
 
 from torch.distributions.normal import Normal
 from scvi.distributions import ZeroInflatedNegativeBinomial, NegativeBinomial
